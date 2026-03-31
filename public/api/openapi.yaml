@@ -194,11 +194,11 @@ paths:
                 city: "Praha"
                 country: "CZ"
               shipping:
-                method_id: 3
+                method_code: "GLS"
                 price_with_vat: 99.0
                 vat_rate: 21.0
               payment:
-                method_id: 17
+                method_code: "CARD"
                 price_with_vat: 0.0
                 status: 0
               total_with_vat: 1297.0
@@ -866,10 +866,10 @@ components:
         shipping:
           type: object
           properties:
-            method_id:
-              type: integer
-              description: ID způsobu dopravy (z GET /v1/shipping-methods)
-              example: 3
+            method_code:
+              type: string
+              description: Kód způsobu dopravy (z GET /v1/shipping-methods)
+              example: "GLS"
             price_with_vat:
               type: number
               description: Cena dopravy s DPH
@@ -881,10 +881,10 @@ components:
         payment:
           type: object
           properties:
-            method_id:
-              type: integer
-              description: ID platební metody (z GET /v1/payment-methods)
-              example: 17
+            method_code:
+              type: string
+              description: Kód platební metody (z GET /v1/payment-methods)
+              example: "CARD"
             price_with_vat:
               type: number
               description: Cena platby s DPH
