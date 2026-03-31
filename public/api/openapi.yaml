@@ -165,12 +165,57 @@ paths:
             schema:
               $ref: "#/components/schemas/OrderCreateRequest"
             example:
-              externalId: "ESHOP-2026-00451"
+              order_id: "ESHOP-2026-00451"
+              order_number: "ORD-451"
+              order_date: "2026-03-31T09:00:00"
+              customer:
+                first_name: "Jan"
+                surname: "Novák"
+                company: null
+                ico: null
+                dic: null
+                phone: "+420600000000"
+                email: "jan@example.com"
+                address:
+                  street: "Dlouhá"
+                  house_number: "1"
+                  street_number: null
+                  zip: "11000"
+                  city: "Praha"
+                  country: "CZ"
+              delivery_address:
+                name: "Jan Novák"
+                company: null
+                phone: null
+                street: "Dlouhá"
+                house_number: "1"
+                street_number: null
+                zip: "11000"
+                city: "Praha"
+                country: "CZ"
+              shipping:
+                method_id: 3
+                price_with_vat: 99.0
+                vat_rate: 21.0
+              payment:
+                method_id: 17
+                price_with_vat: 0.0
+                status: 0
+              total_with_vat: 1297.0
+              currency: "CZK"
+              exchange_rate: 1.0
+              library: 1
+              coupon_code: null
+              note: null
               items:
-                - productId: 757
+                - product_id: 757
                   quantity: 2
-                - productId: 762
+                  unit_price: 599.0
+                  vat_rate: 10.0
+                - product_id: 762
                   quantity: 1
+                  unit_price: 99.0
+                  vat_rate: 21.0
       responses:
         "201":
           description: Objednávka vytvořena
@@ -181,7 +226,7 @@ paths:
               example:
                 ok: true
                 orderId: 102115
-                externalId: "ESHOP-2026-00451"
+                external_order_id: "ESHOP-2026-00451"
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                 ts: "2026-03-31T09:05:00+00:00"
         "400":
@@ -719,25 +764,185 @@ components:
       description: |
         Payload pro vytvoření objednávky. Celý objekt je předán
         do SQL procedury jako JSON string.
+      required: [order_id, items]
       properties:
-        externalId:
+        order_id:
           type: string
-          description: Identifikátor objednávky v externím systému
+          description: Unikátní identifikátor objednávky v e-shopu (slouží zároveň jako idempotency key)
           example: "ESHOP-2026-00451"
+        order_number:
+          type: string
+          nullable: true
+          description: Číslo objednávky pro zobrazení (Cislo)
+          example: "ORD-451"
+        order_date:
+          type: string
+          format: date-time
+          description: Datum a čas objednávky (ISO 8601). Pokud chybí, použije se čas přijetí.
+          example: "2026-03-31T09:00:00"
+        customer:
+          type: object
+          properties:
+            first_name:
+              type: string
+              example: "Jan"
+            surname:
+              type: string
+              example: "Novák"
+            company:
+              type: string
+              nullable: true
+            ico:
+              type: string
+              nullable: true
+            dic:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              nullable: true
+              example: "+420600000000"
+            email:
+              type: string
+              format: email
+              example: "jan@example.com"
+            address:
+              type: object
+              properties:
+                street:
+                  type: string
+                  example: "Dlouhá"
+                house_number:
+                  type: string
+                  description: Číslo popisné
+                  example: "1"
+                street_number:
+                  type: string
+                  nullable: true
+                  description: Číslo orientační
+                  example: "2a"
+                zip:
+                  type: string
+                  example: "11000"
+                city:
+                  type: string
+                  example: "Praha"
+                country:
+                  type: string
+                  description: ISO 3166-1 alpha-2
+                  example: "CZ"
+        delivery_address:
+          type: object
+          description: Doručovací adresa (pokud se liší od fakturační)
+          properties:
+            name:
+              type: string
+              nullable: true
+              example: "Jan Novák"
+            company:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              nullable: true
+            street:
+              type: string
+              nullable: true
+            house_number:
+              type: string
+              nullable: true
+            street_number:
+              type: string
+              nullable: true
+            zip:
+              type: string
+              nullable: true
+            city:
+              type: string
+              nullable: true
+            country:
+              type: string
+              nullable: true
+        shipping:
+          type: object
+          properties:
+            method_id:
+              type: integer
+              description: ID způsobu dopravy (z GET /v1/shipping-methods)
+              example: 3
+            price_with_vat:
+              type: number
+              description: Cena dopravy s DPH
+              example: 99.0
+            vat_rate:
+              type: number
+              description: Sazba DPH dopravy (%)
+              example: 21.0
+        payment:
+          type: object
+          properties:
+            method_id:
+              type: integer
+              description: ID platební metody (z GET /v1/payment-methods)
+              example: 17
+            price_with_vat:
+              type: number
+              description: Cena platby s DPH
+              example: 0.0
+            status:
+              type: integer
+              description: "Stav platby: 0 = nezaplaceno, 1 = zaplaceno"
+              example: 0
+        total_with_vat:
+          type: number
+          description: Celková cena objednávky s DPH
+          example: 1297.0
+        currency:
+          type: string
+          description: Kód měny (ISO 4217)
+          example: "CZK"
+        exchange_rate:
+          type: number
+          description: Kurz měny (1 = CZK)
+          example: 1.0
+        library:
+          type: integer
+          nullable: true
+          description: ID knihovny / skladu
+          example: 1
+        coupon_code:
+          type: string
+          nullable: true
+          description: Slevový poukaz
+        note:
+          type: string
+          nullable: true
+          description: Poznámka k objednávce
         items:
           type: array
           description: Položky objednávky
+          minItems: 1
           items:
             type: object
+            required: [product_id, quantity]
             properties:
-              productId:
+              product_id:
                 type: integer
-                description: ID produktu
+                description: ID produktu (z GET /v1/products)
+                example: 757
               quantity:
-                type: integer
+                type: number
                 description: Množství
-                minimum: 1
-            required: [productId, quantity]
+                minimum: 0.000001
+                example: 2
+              unit_price:
+                type: number
+                description: Jednotková cena s DPH
+                example: 599.0
+              vat_rate:
+                type: number
+                description: Sazba DPH (%)
+                example: 10.0
 
     OrderCreateResponse:
       type: object
@@ -748,11 +953,11 @@ components:
           example: true
         orderId:
           type: integer
-          description: ID vytvořené objednávky v ERP
-        externalId:
+          description: Interní ID vytvořené objednávky v ERP
+        external_order_id:
           type: string
           nullable: true
-          description: Vrácený external ID (echo)
+          description: Echo hodnoty order_id z requestu
         requestId:
           type: string
           format: uuid
