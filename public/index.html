@@ -1,95 +1,11 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Feedco API Documentation</title>
-
-  <!-- Swagger UI CSS z CDN -->
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
-
-  <style>
-    /* Skrytí hlavičky Swagger UI (nahrazujeme vlastním titulkem) */
-    .swagger-ui .topbar {
-      display: none;
-    }
-
-    /* Vlastní hlavička */
-    #feedco-header {
-      background: #1a1a2e;
-      color: #ffffff;
-      padding: 16px 32px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      font-family: sans-serif;
-    }
-
-    #feedco-header h1 {
-      margin: 0;
-      font-size: 1.25rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-
-    #feedco-header .badge {
-      background: #0f3460;
-      border: 1px solid #16213e;
-      border-radius: 4px;
-      padding: 2px 8px;
-      font-size: 0.75rem;
-      opacity: 0.85;
-    }
-
-    body {
-      margin: 0;
-    }
-
-    /* Swagger UI obsah */
-    #swagger-ui {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="0;url=./api/">
+  <title>Feedco Docs</title>
 </head>
 <body>
-
-  <!-- Vlastní branding -->
-  <div id="feedco-header">
-    <h1>Feedco API Documentation</h1>
-    <span class="badge">OpenAPI 3.0</span>
-  </div>
-
-  <!-- Swagger UI kontejner -->
-  <div id="swagger-ui"></div>
-
-  <!-- Swagger UI JS z CDN -->
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
-
-  <script>
-    window.onload = function () {
-      SwaggerUIBundle({
-        url: "./openapi.yaml",
-        dom_id: "#swagger-ui",
-        presets: [
-          SwaggerUIBundle.presets.apis,
-          SwaggerUIStandalonePreset,
-        ],
-        layout: "StandaloneLayout",
-
-        // Konfigurace dle zadání
-        deepLinking: true,
-        defaultModelsExpandDepth: 2,
-        docExpansion: "list",
-        filter: true,
-        tryItOutEnabled: false,
-
-        // Potlačení validačního badgeu (zbytečný šum pro klienty)
-        validatorUrl: null,
-      });
-    };
-  </script>
-
+  <p>Přesměrování na <a href="./api/">API dokumentaci</a>...</p>
 </body>
 </html>

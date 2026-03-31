@@ -4,7 +4,7 @@
     {
       "name": "feedco-docs",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8090", "--directory", "public"],
+      "runtimeArgs": ["-m", "http.server", "8090", "--directory", "public/api"],
       "port": 8090
     }
   ]
