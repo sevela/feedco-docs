@@ -1,0 +1,9 @@
+services:
+  feedco-docs:
+    build: .
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    volumes:
+      # Volitelný bind mount pro live reload openapi.yaml bez rebuildu
+      - ./public/openapi.yaml:/usr/share/nginx/html/openapi.yaml:ro

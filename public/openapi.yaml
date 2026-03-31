@@ -1,0 +1,1107 @@
+openapi: "3.0.3"
+
+info:
+  title: Feedco API
+  version: "1.0.0"
+  description: |
+    **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
+
+    API umožňuje:
+    - Synchronizaci produktového katalogu (produkty, kategorie, série)
+    - Příjem a správu objednávek
+    - Dotazování na způsoby dopravy a platby
+
+    ## Autentizace
+
+    Všechny endpointy (kromě `/v1/health`) vyžadují **HTTP Basic Auth**.
+    Credentials obdržíte při onboardingu.
+
+    ## Společné principy
+
+    - Všechny odpovědi obsahují `requestId` (UUID) a `ts` (ISO 8601 UTC timestamp).
+    - Chybové odpovědi mají konzistentní formát s poli `error`, `message`, `requestId`, `ts`.
+    - Stránkování se řídí query parametry `page` (od 1) a `page_size`.
+    - Delta synchronizace je podporována přes filtr `changed_since` (ISO 8601 datetime).
+    - Request ID lze zadat přes header `X-Request-Id`; pokud chybí, server ho vygeneruje.
+
+    ## Response headers
+
+    Každá odpověď obsahuje tyto custom hlavičky:
+
+    | Header | Popis |
+    |--------|-------|
+    | `X-Request-Id` | Unikátní ID požadavku |
+    | `X-Api-Version` | Verze API (např. `1.0.0`) |
+    | `X-Platform` | Platforma (`feedco`) |
+    | `X-Backend` | Backend systém (např. `helios`) |
+    | `X-Response-Time-Ms` | Doba zpracování v ms |
+
+  contact:
+    name: Feedco API Support
+    email: api@feedco.cz
+    url: https://feedco.cz
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.feedco.cz
+    description: Produkční server
+  - url: http://localhost:8080
+    description: Lokální vývoj
+
+tags:
+  - name: Health
+    description: Stav služby a databáze
+  - name: Auth
+    description: Informace o aktuálním připojení
+  - name: Orders
+    description: Správa objednávek
+  - name: Products
+    description: Produktový katalog
+  - name: Categories
+    description: Kategorie produktů
+  - name: Series
+    description: Edice a série
+  - name: Shipping
+    description: Způsoby dopravy
+  - name: Payment
+    description: Platební metody
+
+security:
+  - basicAuth: []
+
+paths:
+  # ──────────────────────────────────────────────
+  # Health
+  # ──────────────────────────────────────────────
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: |
+        Vrací stav služby a připojení k databázi.
+        Nevyžaduje autentizaci.
+      tags: [Health]
+      security: []
+      responses:
+        "200":
+          description: Služba i databáze OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+                service: Feedco API
+                platform: feedco
+                backend: helios
+                env: production
+                version: "1.0.0"
+                db: ok
+                dbError: null
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-03-31T09:00:00+00:00"
+        "503":
+          description: Databáze nedostupná
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: degraded
+                service: Feedco API
+                platform: feedco
+                backend: helios
+                env: production
+                version: "1.0.0"
+                db: down
+                dbError: "Connection refused"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-03-31T09:00:00+00:00"
+
+  # ──────────────────────────────────────────────
+  # Me
+  # ──────────────────────────────────────────────
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: Informace o připojení
+      description: |
+        Vrací metadata služby, backend info a seznam dostupných capabilities
+        pro aktuálně autentizovaného uživatele.
+      tags: [Auth]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ──────────────────────────────────────────────
+  # Orders
+  # ──────────────────────────────────────────────
+  /v1/orders:
+    post:
+      operationId: createOrder
+      summary: Vytvoření objednávky
+      description: |
+        Vytvoří novou objednávku v ERP.
+
+        ### Idempotence
+
+        Pro zajištění bezpečného opakování požadavku přidejte header `Idempotency-Key`.
+        Při opakovaném volání se stejným klíčem (do 24 h) server vrátí uloženou odpověď
+        bez opětovného vytvoření objednávky.
+      tags: [Orders]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreateRequest"
+            example:
+              externalId: "ESHOP-2026-00451"
+              items:
+                - productId: 757
+                  quantity: 2
+                - productId: 762
+                  quantity: 1
+      responses:
+        "201":
+          description: Objednávka vytvořena
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderCreateResponse"
+              example:
+                ok: true
+                orderId: 102115
+                externalId: "ESHOP-2026-00451"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-03-31T09:05:00+00:00"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      operationId: listOrders
+      summary: Seznam objednávek
+      description: |
+        Vrací stránkovaný seznam objednávek s možností filtrování
+        podle data, statusu a času poslední změny.
+      tags: [Orders]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: date_from
+          in: query
+          description: "Filtr: objednávky od data (YYYY-MM-DD)"
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          description: "Filtr: objednávky do data (YYYY-MM-DD)"
+          schema:
+            type: string
+            format: date
+        - name: status
+          in: query
+          description: "Filtr: status objednávky (např. `010`, `020`, `040`)"
+          schema:
+            type: string
+        - name: changed_since
+          in: query
+          description: "Delta sync: pouze objednávky změněné od tohoto okamžiku (ISO 8601)"
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Seznam objednávek
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrdersListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/orders/{order_id}:
+    get:
+      operationId: getOrder
+      summary: Detail objednávky
+      description: Vrací kompletní detail jedné objednávky.
+      tags: [Orders]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: Detail objednávky
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  order:
+                    $ref: "#/components/schemas/Order"
+                  requestId:
+                    type: string
+                  ts:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/orders/{order_id}/status:
+    put:
+      operationId: updateOrderStatus
+      summary: Aktualizace statusu objednávky
+      description: |
+        Změní status existující objednávky.
+        Volitelně lze přidat poznámku (`note`).
+      tags: [Orders]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderStatusUpdateRequest"
+            example:
+              status: "040"
+              note: "Expedováno přes GLS"
+      responses:
+        "200":
+          description: Status aktualizován
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderStatusUpdateResponse"
+              example:
+                ok: true
+                orderId: 102114
+                status: "040"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-03-31T09:10:00+00:00"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ──────────────────────────────────────────────
+  # Products
+  # ──────────────────────────────────────────────
+  /v1/products:
+    get:
+      operationId: listProducts
+      summary: Seznam produktů
+      description: |
+        Vrací stránkovaný seznam produktů.
+        Podporuje filtrování podle série, kategorie a času změny.
+      tags: [Products]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: series_id
+          in: query
+          description: "Filtr: ID série"
+          schema:
+            type: integer
+        - name: category_id
+          in: query
+          description: "Filtr: ID kategorie"
+          schema:
+            type: integer
+        - name: changed_since
+          in: query
+          description: "Delta sync: pouze produkty změněné od tohoto okamžiku (ISO 8601)"
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Seznam produktů
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductsListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/products/{product_id}:
+    get:
+      operationId: getProduct
+      summary: Detail produktu
+      description: Vrací kompletní detail jednoho produktu.
+      tags: [Products]
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          description: ID produktu
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Detail produktu
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  product:
+                    $ref: "#/components/schemas/Product"
+                  requestId:
+                    type: string
+                  ts:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ──────────────────────────────────────────────
+  # Categories
+  # ──────────────────────────────────────────────
+  /v1/categories:
+    get:
+      operationId: listCategories
+      summary: Seznam kategorií
+      description: Vrací stránkovaný seznam kategorií produktů.
+      tags: [Categories]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: page_size
+          in: query
+          description: Počet záznamů na stránku (výchozí 200, max 1000)
+          schema:
+            type: integer
+            default: 200
+            maximum: 1000
+        - name: changed_since
+          in: query
+          description: "Delta sync: pouze kategorie změněné od tohoto okamžiku"
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Seznam kategorií
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoriesListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ──────────────────────────────────────────────
+  # Series
+  # ──────────────────────────────────────────────
+  /v1/series:
+    get:
+      operationId: listSeries
+      summary: Seznam sérií a edicí
+      description: Vrací stránkovaný seznam sérií a edicí.
+      tags: [Series]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: page_size
+          in: query
+          description: Počet záznamů na stránku (výchozí 200, max 1000)
+          schema:
+            type: integer
+            default: 200
+            maximum: 1000
+        - name: changed_since
+          in: query
+          description: "Delta sync: pouze série změněné od tohoto okamžiku"
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Seznam sérií
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ──────────────────────────────────────────────
+  # Shipping & Payment
+  # ──────────────────────────────────────────────
+  /v1/shipping-methods:
+    get:
+      operationId: listShippingMethods
+      summary: Způsoby dopravy
+      description: Vrací dostupné způsoby dopravy.
+      tags: [Shipping]
+      responses:
+        "200":
+          description: Seznam způsobů dopravy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShippingMethodsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/payment-methods:
+    get:
+      operationId: listPaymentMethods
+      summary: Platební metody
+      description: Vrací dostupné platební metody.
+      tags: [Payment]
+      responses:
+        "200":
+          description: Seznam platebních metod
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethodsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+# ================================================================
+# Components
+# ================================================================
+components:
+
+  # ──────────────────────────────────────────────
+  # Security
+  # ──────────────────────────────────────────────
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: |
+        HTTP Basic Auth. Credentials obdržíte při onboardingu.
+
+  # ──────────────────────────────────────────────
+  # Parameters
+  # ──────────────────────────────────────────────
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Číslo stránky (od 1)
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+
+    PageSize:
+      name: page_size
+      in: query
+      description: Počet záznamů na stránku (výchozí 50, max 200)
+      schema:
+        type: integer
+        default: 50
+        maximum: 200
+
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      description: ID objednávky
+      schema:
+        type: integer
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: |
+        Klíč pro idempotentní vytvoření objednávky.
+        Při opakovaném volání se stejným klíčem (do 24 h) se vrátí
+        uložená odpověď bez opětovného vytvoření.
+      schema:
+        type: string
+
+  # ──────────────────────────────────────────────
+  # Responses (reusable errors)
+  # ──────────────────────────────────────────────
+  responses:
+    Unauthorized:
+      description: Neplatné nebo chybějící credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: unauthorized
+            message: Invalid credentials
+            requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            ts: "2026-03-31T09:00:00+00:00"
+
+    BadRequest:
+      description: Chybný požadavek
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: bad_request
+            message: "Body must be a JSON object"
+            requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            ts: "2026-03-31T09:00:00+00:00"
+
+    NotFound:
+      description: Záznam nenalezen
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: not_found
+            message: "Order 999999 not found"
+            requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            ts: "2026-03-31T09:00:00+00:00"
+
+    InternalError:
+      description: Interní chyba serveru
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponseWithDetails"
+          example:
+            error: internal_error
+            message: "Order creation failed"
+            details: "Connection timeout"
+            requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            ts: "2026-03-31T09:00:00+00:00"
+
+  # ──────────────────────────────────────────────
+  # Schemas
+  # ──────────────────────────────────────────────
+  schemas:
+
+    # --- Common ---
+
+    ErrorResponse:
+      type: object
+      required: [error, message, requestId, ts]
+      properties:
+        error:
+          type: string
+          description: Chybový kód
+        message:
+          type: string
+          description: Lidsky čitelný popis chyby
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    ErrorResponseWithDetails:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            details:
+              type: string
+              description: Technický detail (zobrazen jen v dev/staging)
+
+    # --- Health ---
+
+    HealthResponse:
+      type: object
+      required: [status, service, platform, backend, env, version, db, requestId, ts]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        service:
+          type: string
+        platform:
+          type: string
+        backend:
+          type: string
+        env:
+          type: string
+        version:
+          type: string
+        db:
+          type: string
+          enum: [ok, down]
+        dbError:
+          type: string
+          nullable: true
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Me ---
+
+    MeResponse:
+      type: object
+      properties:
+        service:
+          type: string
+        platform:
+          type: string
+        backend:
+          type: string
+        env:
+          type: string
+        version:
+          type: string
+        auth:
+          type: object
+          properties:
+            type:
+              type: string
+              example: basic
+        capabilities:
+          type: object
+          description: Mapa dostupných operací
+        requestId:
+          type: string
+        ts:
+          type: string
+          format: date-time
+
+    # --- Orders ---
+
+    OrderCreateRequest:
+      type: object
+      description: |
+        Payload pro vytvoření objednávky. Celý objekt je předán
+        do SQL procedury jako JSON string.
+      properties:
+        externalId:
+          type: string
+          description: Identifikátor objednávky v externím systému
+          example: "ESHOP-2026-00451"
+        items:
+          type: array
+          description: Položky objednávky
+          items:
+            type: object
+            properties:
+              productId:
+                type: integer
+                description: ID produktu
+              quantity:
+                type: integer
+                description: Množství
+                minimum: 1
+            required: [productId, quantity]
+
+    OrderCreateResponse:
+      type: object
+      required: [ok, orderId, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        orderId:
+          type: integer
+          description: ID vytvořené objednávky v ERP
+        externalId:
+          type: string
+          nullable: true
+          description: Vrácený external ID (echo)
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    Order:
+      type: object
+      description: Objednávka v seznamu
+      properties:
+        order_id:
+          type: integer
+          description: Interní ID objednávky v ERP
+          example: 102114
+        code:
+          type: string
+          description: Kód objednávky
+          example: "104253899"
+        status:
+          type: string
+          description: |
+            Status objednávky (číselný kód):
+            - `010` — Nová
+            - `020` — Potvrzená
+            - `040` — Expedovaná
+            - `050` — Stornovaná
+          example: "020"
+        order_total:
+          type: string
+          description: Celková částka objednávky (CZK)
+          example: "1485.000000"
+        created_at:
+          type: string
+          format: date-time
+          description: Datum vytvoření
+        updated_at:
+          type: string
+          format: date-time
+          description: Datum poslední změny
+
+    OrdersListResponse:
+      type: object
+      required: [ok, orders, count, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+        count:
+          type: integer
+          description: Počet vrácených záznamů
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    OrderStatusUpdateRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: Nový status objednávky
+          example: "040"
+        note:
+          type: string
+          description: Volitelná poznámka ke změně statusu
+          example: "Expedováno přes GLS"
+
+    OrderStatusUpdateResponse:
+      type: object
+      required: [ok, orderId, status, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        orderId:
+          type: integer
+        status:
+          type: string
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Products ---
+
+    Product:
+      type: object
+      description: Produkt z katalogu
+      properties:
+        product_id:
+          type: integer
+          description: ID produktu
+          example: 757
+        parent_product_id:
+          type: integer
+          nullable: true
+          description: ID rodičovského produktu (pro varianty)
+        category_id:
+          type: integer
+          description: ID primární kategorie
+          example: 12
+        alternative_category_ids:
+          type: string
+          nullable: true
+          description: Alternativní kategorie (formát závisí na backendu)
+        series_id:
+          type: integer
+          nullable: true
+          description: ID série / edice
+          example: 202
+        code:
+          type: string
+          description: Kód produktu (SKU)
+          example: "100000011"
+        name:
+          type: string
+          description: Název produktu
+          example: "Nezaručené pověsti / Čiary života"
+        subtitle:
+          type: string
+          description: Podtitul
+        original_name:
+          type: string
+          description: Původní název (u překladů)
+        description_short:
+          type: string
+          description: Krátký popis
+        description_long:
+          type: string
+          description: Dlouhý popis (může obsahovat HTML)
+        reviews:
+          type: string
+          nullable: true
+          description: Recenze / ohlasy (může obsahovat HTML)
+        ean:
+          type: string
+          description: EAN kód
+          example: "9788090212701"
+        price:
+          type: string
+          description: Koncová cena (CZK)
+          example: "67"
+        price_b2b:
+          type: string
+          description: B2B cena (CZK)
+          example: "55"
+        vat_rate:
+          type: string
+          description: Sazba DPH
+          example: "0.00"
+        stock_quantity:
+          type: string
+          description: |
+            Skladová zásoba. Záporné hodnoty indikují neskladové položky
+            nebo neomezený sklad (závisí na konfiguraci).
+          example: "-9999.000000"
+        unit:
+          type: string
+          description: Jednotka
+          example: "ks"
+        isbn:
+          type: string
+          description: ISBN
+          example: "80-902127-0-0"
+        active:
+          type: boolean
+          description: Aktivní produkt
+        updated_at:
+          type: string
+          format: date-time
+          description: Datum poslední aktualizace
+
+    ProductsListResponse:
+      type: object
+      required: [ok, products, count, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        count:
+          type: integer
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Categories ---
+
+    Category:
+      type: object
+      properties:
+        category_id:
+          type: integer
+          description: ID kategorie
+          example: 2
+        master_category_id:
+          type: integer
+          nullable: true
+          description: ID nadřazené kategorie
+        name:
+          type: string
+          description: Název kategorie
+          example: "Česká beletrie"
+        active:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+
+    CategoriesListResponse:
+      type: object
+      required: [ok, categories, count, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
+        count:
+          type: integer
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Series ---
+
+    Series:
+      type: object
+      properties:
+        series_id:
+          type: integer
+          description: ID série
+          example: 19
+        name:
+          type: string
+          description: Název série / edice
+          example: "Česká knižnice"
+        description:
+          type: string
+          nullable: true
+          description: Popis série
+        type:
+          type: string
+          enum: [EDITION, SERIES]
+          description: |
+            Typ:
+            - `EDITION` — edice (řada knih se společným vizuálním stylem)
+            - `SERIES` — série (příběhová / tematická návaznost)
+          example: "EDITION"
+        active:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+
+    SeriesListResponse:
+      type: object
+      required: [ok, series, count, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        series:
+          type: array
+          items:
+            $ref: "#/components/schemas/Series"
+        count:
+          type: integer
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Shipping ---
+
+    ShippingMethod:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Kód způsobu dopravy
+          example: "GLS"
+        name:
+          type: string
+          description: Název
+          example: "GLS"
+
+    ShippingMethodsResponse:
+      type: object
+      required: [ok, shippingMethods, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        shippingMethods:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShippingMethod"
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Payment ---
+
+    PaymentMethod:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Kód platební metody
+          example: "17"
+        name:
+          type: string
+          description: Název
+          example: "Kartou online"
+
+    PaymentMethodsResponse:
+      type: object
+      required: [ok, paymentMethods, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        paymentMethods:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentMethod"
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
