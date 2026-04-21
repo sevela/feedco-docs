@@ -2,7 +2,7 @@ openapi: "3.0.3"
 
 info:
   title: Feedco API
-  version: "1.0.0"
+  version: "1.0.2"
   description: |
     **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
 
@@ -62,6 +62,8 @@ tags:
     description: Kategorie produktů
   - name: Series
     description: Edice a série
+  - name: Awards
+    description: Ocenění produktů a osob
   - name: Shipping
     description: Způsoby dopravy
   - name: Payment
@@ -508,6 +510,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SeriesListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ──────────────────────────────────────────────
+  # Awards
+  # ──────────────────────────────────────────────
+  /v1/awards:
+    get:
+      operationId: listAwards
+      summary: Seznam ocenění
+      description: |
+        Vrací stránkovaný seznam ocenění s vazbami na produkty a osoby.
+        Vnořené pole `products` a `persons` obsahují navázané entity.
+      tags: [Awards]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: page_size
+          in: query
+          description: Počet záznamů na stránku (výchozí 200, max 1000)
+          schema:
+            type: integer
+            default: 200
+            maximum: 1000
+        - name: changed_since
+          in: query
+          description: "Delta sync: pouze ocenění změněná od tohoto okamžiku"
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Seznam ocenění
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AwardsListResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1240,6 +1282,92 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Series"
+        count:
+          type: integer
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Awards ---
+
+    Award:
+      type: object
+      properties:
+        award_id:
+          type: integer
+          description: ID ocenění
+          example: 42
+        award_name:
+          type: string
+          description: Název ceny
+          example: "Magnesia Litera"
+        category:
+          type: string
+          nullable: true
+          description: Kategorie ocenění
+          example: "Próza"
+        year:
+          type: integer
+          description: Rok udělení
+          example: 2024
+        note:
+          type: string
+          nullable: true
+          description: Poznámka
+        standing:
+          type: string
+          nullable: true
+          description: Umístění (Nominace, Vítěz, ...)
+          example: "Nominace"
+        order_by:
+          type: integer
+          description: Pořadí pro řazení
+        updated_at:
+          type: string
+          format: date-time
+          description: Datum poslední změny
+        products:
+          type: array
+          description: Navázané produkty
+          items:
+            type: object
+            properties:
+              product_id:
+                type: integer
+                description: ID produktu
+                example: 757
+              name:
+                type: string
+                description: Název produktu
+                example: "Nezaručené pověsti"
+        persons:
+          type: array
+          description: Navázané osoby
+          items:
+            type: object
+            properties:
+              person_id:
+                type: integer
+                description: ID osoby
+                example: 123
+              full_name:
+                type: string
+                description: Celé jméno s tituly
+                example: "Novák Jan, Mgr."
+
+    AwardsListResponse:
+      type: object
+      required: [ok, awards, count, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        awards:
+          type: array
+          items:
+            $ref: "#/components/schemas/Award"
         count:
           type: integer
         requestId:
