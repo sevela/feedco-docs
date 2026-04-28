@@ -2,12 +2,12 @@ openapi: "3.0.3"
 
 info:
   title: Feedco API
-  version: "1.0.2"
+  version: "1.0.5"
   description: |
     **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
 
     API umožňuje:
-    - Synchronizaci produktového katalogu (produkty, kategorie, série)
+    - Synchronizaci produktového katalogu (produkty, kategorie, série, ocenění, osoby)
     - Příjem a správu objednávek
     - Dotazování na způsoby dopravy a platby
 
@@ -64,6 +64,8 @@ tags:
     description: Edice a série
   - name: Awards
     description: Ocenění produktů a osob
+  - name: Persons
+    description: Osoby (autoři, překladatelé, ilustrátoři, …)
   - name: Shipping
     description: Způsoby dopravy
   - name: Payment
@@ -98,7 +100,7 @@ paths:
                 platform: feedco
                 backend: helios
                 env: production
-                version: "1.0.0"
+                version: "1.0.5"
                 db: ok
                 dbError: null
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -115,7 +117,7 @@ paths:
                 platform: feedco
                 backend: helios
                 env: production
-                version: "1.0.0"
+                version: "1.0.5"
                 db: down
                 dbError: "Connection refused"
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -368,19 +370,18 @@ paths:
       summary: Seznam produktů
       description: |
         Vrací stránkovaný seznam produktů.
-        Podporuje filtrování podle série, kategorie a času změny.
+        Podporuje filtrování podle primární kategorie a času změny.
+
+        Každý produkt obsahuje vnořené pole `persons[]` s navázanými osobami
+        (autor, překladatel, ilustrátor…) a `order_by` jako 9-znakový sort key
+        pro doporučené pořadí katalogu (řadit ASC).
       tags: [Products]
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
-        - name: series_id
-          in: query
-          description: "Filtr: ID série"
-          schema:
-            type: integer
         - name: category_id
           in: query
-          description: "Filtr: ID kategorie"
+          description: "Filtr: přesné ID primární kategorie (nezahrnuje podkategorie)"
           schema:
             type: integer
         - name: changed_since
@@ -554,6 +555,88 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ──────────────────────────────────────────────
+  # Persons
+  # ──────────────────────────────────────────────
+  /v1/persons:
+    get:
+      operationId: listPersons
+      summary: Seznam osob
+      description: |
+        Vrací stránkovaný seznam osob (autoři, editoři, překladatelé,
+        ilustrátoři, fotografové, výtvarný doprovod) s medailonky.
+
+        Role osoby u konkrétního produktu je atributem **vazby**
+        a najdete ji v `products[].persons[].role`, ne přímo na osobě –
+        jedna osoba může u různých produktů figurovat v různých rolích.
+      tags: [Persons]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: page_size
+          in: query
+          description: Počet záznamů na stránku (výchozí 200, max 1000)
+          schema:
+            type: integer
+            default: 200
+            maximum: 1000
+        - name: changed_since
+          in: query
+          description: "Delta sync: pouze osoby změněné od tohoto okamžiku"
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Seznam osob
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonsListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/persons/{person_id}:
+    get:
+      operationId: getPerson
+      summary: Detail osoby
+      description: Vrací detail jedné osoby (medailonek).
+      tags: [Persons]
+      parameters:
+        - name: person_id
+          in: path
+          required: true
+          description: ID osoby
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Detail osoby
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  person:
+                    $ref: "#/components/schemas/Person"
+                  requestId:
+                    type: string
+                  ts:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1179,6 +1262,44 @@ components:
           type: string
           format: date-time
           description: Datum poslední aktualizace
+        order_by:
+          type: string
+          description: |
+            9-znakový sort key pro doporučené pořadí v katalogu –
+            řadit ASC. Pod kapotou kombinuje skladovost / ruční pořadí /
+            vazbu / rok vydání / podpis; klient ho jen převezme,
+            žádný další výklad nepotřebuje.
+          example: "001022024"
+        persons:
+          type: array
+          description: |
+            Osoby navázané na produkt s konkrétní rolí. Stejná osoba
+            může u jiného produktu figurovat v jiné roli – `role` patří
+            **vazbě**, ne osobě. Detail osoby (medailonek) lze dotáhnout
+            přes `GET /v1/persons/{person_id}`.
+          items:
+            type: object
+            required: [person_id, role]
+            properties:
+              person_id:
+                type: integer
+                description: ID osoby
+                example: 123
+              role:
+                type: string
+                description: Kód role osoby u produktu z pevného číselníku
+                enum: [author, editor, translator, illustrator, photographer, artistic_contributor]
+                example: "author"
+              name:
+                type: string
+                nullable: true
+                description: Křestní jméno (pro display)
+                example: "Jan"
+              surname:
+                type: string
+                nullable: true
+                description: Příjmení (pro display)
+                example: "Novák"
 
     ProductsListResponse:
       type: object
@@ -1206,21 +1327,26 @@ components:
       properties:
         category_id:
           type: integer
-          description: ID kategorie
-          example: 2
-        master_category_id:
+          description: ID kategorie (prefixované nultou kategorií, např. 10005)
+          example: 10005
+        parent_category_id:
           type: integer
           nullable: true
-          description: ID nadřazené kategorie
+          description: ID nadřazené kategorie (`null` = kořenová)
         name:
           type: string
           description: Název kategorie
           example: "Česká beletrie"
         active:
           type: boolean
+        order_by:
+          type: integer
+          description: Preferované pořadí v rámci nadřazené kategorie (vzestupně)
         updated_at:
           type: string
           format: date-time
+          nullable: true
+          description: Datum poslední změny (u kořenových kategorií může být `null`)
 
     CategoriesListResponse:
       type: object
@@ -1368,6 +1494,58 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Award"
+        count:
+          type: integer
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Persons ---
+
+    Person:
+      type: object
+      description: Osoba (autor / překladatel / ilustrátor / …)
+      properties:
+        person_id:
+          type: integer
+          description: ID osoby
+          example: 123
+        name:
+          type: string
+          nullable: true
+          description: Křestní jméno
+          example: "Jan"
+        surname:
+          type: string
+          nullable: true
+          description: Příjmení
+          example: "Novák"
+        bio_short:
+          type: string
+          nullable: true
+          description: Krátký medailonek (HTML)
+        bio_long:
+          type: string
+          nullable: true
+          description: Dlouhý medailonek (HTML)
+        updated_at:
+          type: string
+          format: date-time
+          description: Datum poslední změny
+
+    PersonsListResponse:
+      type: object
+      required: [ok, persons, count, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        persons:
+          type: array
+          items:
+            $ref: "#/components/schemas/Person"
         count:
           type: integer
         requestId:
