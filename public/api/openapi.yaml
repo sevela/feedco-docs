@@ -291,7 +291,9 @@ paths:
     get:
       operationId: getOrder
       summary: Detail objednávky
-      description: Vrací kompletní detail jedné objednávky.
+      description: |
+        Vrací kompletní detail objednávky včetně zákaznických údajů,
+        doručovací adresy, dopravy, platby a položek s odkazy na e-knihy.
       tags: [Orders]
       parameters:
         - $ref: "#/components/parameters/OrderId"
@@ -307,7 +309,7 @@ paths:
                     type: boolean
                     example: true
                   order:
-                    $ref: "#/components/schemas/Order"
+                    $ref: "#/components/schemas/OrderDetail"
                   requestId:
                     type: string
                   ts:
@@ -317,6 +319,24 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/order-statuses:
+    get:
+      operationId: listOrderStatuses
+      summary: Číselník stavů objednávek
+      description: Vrací seznam možných stavů objednávek v ERP.
+      tags: [Orders]
+      responses:
+        "200":
+          description: Seznam stavů
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderStatusesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1090,39 +1110,200 @@ components:
           type: string
           format: date-time
 
-    Order:
+    OrderListItem:
       type: object
-      description: Objednávka v seznamu
+      description: Objednávka v seznamu (souhrn)
       properties:
         order_id:
-          type: integer
-          description: Interní ID objednávky v ERP
-          example: 102114
+          type: string
+          description: Externí ID objednávky (z e-shopu)
+          example: "ESHOP-2026-00451"
+        order_number:
+          type: string
+          description: Číslo objednávky
+          example: "ORD-451"
         code:
           type: string
-          description: Kód objednávky
-          example: "104253899"
+          nullable: true
+          description: Párovací znak v Heliosu
+        order_date:
+          type: string
+          format: date-time
+          description: Datum objednávky
         status:
           type: string
-          description: |
-            Status objednávky (číselný kód):
-            - `010` — Nová
-            - `020` — Potvrzená
-            - `040` — Expedovaná
-            - `050` — Stornovaná
-          example: "020"
-        order_total:
+          nullable: true
+          description: "Status objednávky (kód z GET /v1/order-statuses)"
+          example: "030"
+        error:
           type: string
-          description: Celková částka objednávky (CZK)
-          example: "1485.000000"
+          nullable: true
+          description: Text chyby zpracování
+        total_with_vat:
+          type: number
+          nullable: true
+          description: Celková cena s DPH
+        currency:
+          type: string
+          nullable: true
+          example: "CZK"
+        pickup_point:
+          type: string
+          nullable: true
+          description: Výdejní místo
+        tracking_number:
+          type: string
+          nullable: true
+          description: Číslo zásilky
+        tracking_url:
+          type: string
+          nullable: true
+          description: Odkaz na sledování zásilky
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Datum zpracování do Heliosu
         created_at:
           type: string
           format: date-time
-          description: Datum vytvoření
+          nullable: true
         updated_at:
           type: string
           format: date-time
-          description: Datum poslední změny
+          nullable: true
+
+    OrderDetail:
+      type: object
+      description: Kompletní detail objednávky (GET /v1/orders/{id})
+      properties:
+        order_id:
+          type: string
+          example: "ESHOP-2026-00451"
+        order_number:
+          type: string
+        code:
+          type: string
+          nullable: true
+        order_date:
+          type: string
+          format: date-time
+        status:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        customer:
+          type: object
+          description: Zákazník (fakturační údaje)
+          properties:
+            first_name: { type: string }
+            surname: { type: string }
+            company: { type: string, nullable: true }
+            ico: { type: string, nullable: true }
+            dic: { type: string, nullable: true }
+            phone: { type: string, nullable: true }
+            email: { type: string }
+            street: { type: string }
+            house_number: { type: string }
+            street_number: { type: string, nullable: true }
+            zip: { type: string }
+            city: { type: string }
+            country: { type: string, nullable: true }
+        delivery_address:
+          type: object
+          description: Doručovací adresa
+          properties:
+            name: { type: string, nullable: true }
+            company: { type: string, nullable: true }
+            phone: { type: string, nullable: true }
+            street: { type: string, nullable: true }
+            house_number: { type: string, nullable: true }
+            street_number: { type: string, nullable: true }
+            zip: { type: string, nullable: true }
+            city: { type: string, nullable: true }
+            country: { type: string, nullable: true }
+        shipping:
+          type: object
+          properties:
+            method_code: { type: string, nullable: true, description: "Kód dopravy" }
+            price_with_vat: { type: number, nullable: true }
+            vat_rate: { type: number, nullable: true }
+        payment:
+          type: object
+          properties:
+            method_code: { type: string, nullable: true, description: "Kód platby" }
+            price_with_vat: { type: number, nullable: true }
+            status: { type: integer, nullable: true, description: "0=nezaplaceno, 1=zaplaceno" }
+        total_with_vat:
+          type: number
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        exchange_rate:
+          type: number
+          nullable: true
+        coupon_code:
+          type: string
+          nullable: true
+        library:
+          type: integer
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        items:
+          type: array
+          description: Položky objednávky
+          items:
+            type: object
+            properties:
+              item_id:
+                type: integer
+              product_id:
+                type: integer
+                nullable: true
+              quantity:
+                type: number
+              unit_price:
+                type: number
+              vat_rate:
+                type: number
+                nullable: true
+              links:
+                type: object
+                nullable: true
+                description: Odkazy na e-knihy (formát + URL)
+                properties:
+                  format: { type: string, example: "epub" }
+                  url: { type: string, format: uri }
+        pickup_point:
+          type: string
+          nullable: true
+        tracking_number:
+          type: string
+          nullable: true
+        tracking_url:
+          type: string
+          nullable: true
+        invoice_url:
+          type: string
+          nullable: true
+          description: Odkaz na fakturu
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
 
     OrdersListResponse:
       type: object
@@ -1133,10 +1314,38 @@ components:
         orders:
           type: array
           items:
-            $ref: "#/components/schemas/Order"
+            $ref: "#/components/schemas/OrderListItem"
         count:
           type: integer
-          description: Počet vrácených záznamů
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    OrderStatus:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Kód stavu
+          example: "030"
+        name:
+          type: string
+          description: Název stavu
+          example: "Zpracovávaná"
+
+    OrderStatusesResponse:
+      type: object
+      required: [ok, orderStatuses, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        orderStatuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderStatus"
         requestId:
           type: string
           format: uuid
