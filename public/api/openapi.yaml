@@ -392,9 +392,11 @@ paths:
         Vrací stránkovaný seznam produktů.
         Podporuje filtrování podle primární kategorie a času změny.
 
-        Každý produkt obsahuje vnořené pole `persons[]` s navázanými osobami
-        (autor, překladatel, ilustrátor…) a `order_by` jako 9-znakový sort key
-        pro doporučené pořadí katalogu (řadit ASC).
+        Každý produkt obsahuje vnořená pole:
+        - `persons[]` — navázané osoby (autor, překladatel, ilustrátor…)
+        - `params[]` — parametry produktu (počet stran, vazba, rozměr…)
+        - `tags[]` — štítky (novinka, bestseller, akce…)
+        - `order_by` — 9-znakový sort key pro doporučené pořadí katalogu (řadit ASC)
       tags: [Products]
       parameters:
         - $ref: "#/components/parameters/Page"
@@ -1481,6 +1483,7 @@ components:
           example: "001022024"
         persons:
           type: array
+          nullable: true
           description: |
             Osoby navázané na produkt s konkrétní rolí. Stejná osoba
             může u jiného produktu figurovat v jiné roli – `role` patří
@@ -1509,6 +1512,37 @@ components:
                 nullable: true
                 description: Příjmení (pro display)
                 example: "Novák"
+        params:
+          type: array
+          nullable: true
+          description: |
+            Parametry produktu (key-value). Vrací se jen parametry s nenulovou hodnotou.
+            Možné názvy: Počet stran, Rozměr, Vydání (pořadí), Publikace (ukončený prodej),
+            Vazba, Datum vydání, Pořadí v sérii.
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Název parametru
+                example: "Počet stran"
+              value:
+                type: string
+                description: Hodnota parametru (vždy string)
+                example: "320"
+        tags:
+          type: array
+          nullable: true
+          description: |
+            Štítky produktu. Vrací se jen aktivní štítky.
+            Možné hodnoty: Připravujeme, Předobjednávka, Novinka, Akce, Bestseller.
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Název štítku
+                example: "Novinka"
 
     ProductsListResponse:
       type: object
