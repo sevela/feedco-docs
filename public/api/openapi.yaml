@@ -2,7 +2,7 @@ openapi: "3.0.3"
 
 info:
   title: Feedco API
-  version: "1.0.5"
+  version: "1.0.6"
   description: |
     **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
 
@@ -100,7 +100,7 @@ paths:
                 platform: feedco
                 backend: helios
                 env: production
-                version: "1.0.5"
+                version: "1.0.6"
                 db: ok
                 dbError: null
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -117,7 +117,7 @@ paths:
                 platform: feedco
                 backend: helios
                 env: production
-                version: "1.0.5"
+                version: "1.0.6"
                 db: down
                 dbError: "Connection refused"
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
