@@ -2,7 +2,7 @@ openapi: "3.0.3"
 
 info:
   title: Feedco API
-  version: "1.0.6"
+  version: "1.0.8"
   description: |
     **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
 
@@ -58,6 +58,8 @@ tags:
     description: Správa objednávek
   - name: Products
     description: Produktový katalog
+  - name: Stock
+    description: Skladovost a varianty (oddělený delta-sync endpoint)
   - name: Categories
     description: Kategorie produktů
   - name: Series
@@ -100,7 +102,7 @@ paths:
                 platform: feedco
                 backend: helios
                 env: production
-                version: "1.0.6"
+                version: "1.0.8"
                 db: ok
                 dbError: null
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -117,7 +119,7 @@ paths:
                 platform: feedco
                 backend: helios
                 env: production
-                version: "1.0.6"
+                version: "1.0.8"
                 db: down
                 dbError: "Connection refused"
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -210,6 +212,7 @@ paths:
               exchange_rate: 1.0
               library: 1
               coupon_code: null
+              pickup_point: null
               note: null
               items:
                 - product_id: 757
@@ -230,7 +233,11 @@ paths:
               example:
                 ok: true
                 orderId: 102115
-                external_order_id: "ESHOP-2026-00451"
+                externalOrderId: "ESHOP-2026-00451"
+                orderNumber: "ORD-451"
+                code: "OBJ2026001"
+                status: "010"
+                error: null
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                 ts: "2026-03-31T09:05:00+00:00"
         "400":
@@ -340,13 +347,28 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /v1/orders/{order_id}/status:
+  /v1/orders/{order_id}/payment:
     put:
-      operationId: updateOrderStatus
-      summary: Aktualizace statusu objednávky
+      operationId: updateOrderPayment
+      summary: Aktualizace stavu platby objednávky
       description: |
-        Změní status existující objednávky.
-        Volitelně lze přidat poznámku (`note`).
+        Změní stav platby u existující objednávky.
+
+        Stav samotné objednávky (`status`) řídí Helios — e-shop ho přes API nemění.
+
+        ### Číselník stavů platby (`status`)
+
+        | Hodnota | Popis |
+        |---|---|
+        | `null` | Neuvedeno |
+        | `0` | Nelze ověřit |
+        | `1` | Zaplacená |
+        | `2` | Autorizovaná |
+        | `3` | Platba vybrána |
+        | `4` | Čekající |
+        | `5` | Vrácená |
+        | `8` | Vypršel časový limit |
+        | `9` | Zrušená |
       tags: [Orders]
       parameters:
         - $ref: "#/components/parameters/OrderId"
@@ -355,21 +377,21 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/OrderStatusUpdateRequest"
+              $ref: "#/components/schemas/OrderPaymentUpdateRequest"
             example:
-              status: "040"
-              note: "Expedováno přes GLS"
+              status: 1
       responses:
         "200":
-          description: Status aktualizován
+          description: Stav platby aktualizován
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OrderStatusUpdateResponse"
+                $ref: "#/components/schemas/OrderPaymentUpdateResponse"
               example:
                 ok: true
                 orderId: 102114
-                status: "040"
+                payment:
+                  status: 1
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                 ts: "2026-03-31T09:10:00+00:00"
         "400":
@@ -452,6 +474,85 @@ paths:
                     example: true
                   product:
                     $ref: "#/components/schemas/Product"
+                  requestId:
+                    type: string
+                  ts:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ──────────────────────────────────────────────
+  # Stock
+  # ──────────────────────────────────────────────
+  /v1/stock:
+    get:
+      operationId: listStock
+      summary: Skladovost produktů
+      description: |
+        Vrací stránkovaný seznam skladovostí produktů. Vhodné pro častý delta sync
+        (typicky častější než katalog).
+
+        Filtr `changed_since` vrátí jen produkty se skladovými pohyby v daném období
+        (produkty s `updated_at = null` jsou odfiltrované).
+
+        Speciální hodnoty `stock_quantity`:
+        - `-9999` – produkt nelze prodávat (připravujeme / prodej ukončen / nedotiskovat / pozastaveno)
+        - `99999` – e-kniha (vždy dostupná)
+      tags: [Stock]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: changed_since
+          in: query
+          description: "Delta sync: pouze produkty se skladovým pohybem od tohoto okamžiku (ISO 8601)"
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Seznam skladovostí
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/stock/{product_id}:
+    get:
+      operationId: getStock
+      summary: Detail skladovosti produktu
+      description: Vrací aktuální skladovost a varianty jednoho produktu.
+      tags: [Stock]
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          description: ID produktu
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Detail skladovosti
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  stock:
+                    $ref: "#/components/schemas/Stock"
                   requestId:
                     type: string
                   ts:
@@ -1038,7 +1139,11 @@ components:
               example: 0.0
             status:
               type: integer
-              description: "Stav platby: 0 = nezaplaceno, 1 = zaplaceno"
+              nullable: true
+              description: |
+                Stav platby. Viz [číselník stavů platby](#tag/Orders/operation/updateOrderPayment).
+                NULL=neuvedeno, 0=Nelze ověřit, 1=Zaplacená, 2=Autorizovaná,
+                3=Platba vybrána, 4=Čekající, 5=Vrácená, 8=Vypršel časový limit, 9=Zrušená.
               example: 0
         total_with_vat:
           type: number
@@ -1061,6 +1166,10 @@ components:
           type: string
           nullable: true
           description: Slevový poukaz
+        pickup_point:
+          type: string
+          nullable: true
+          description: Kód výdejního místa (např. pro Zásilkovnu)
         note:
           type: string
           nullable: true
@@ -1100,11 +1209,27 @@ components:
           example: true
         orderId:
           type: integer
-          description: Interní ID vytvořené objednávky v ERP
-        external_order_id:
+          description: Interní ID vytvořené objednávky v ERP (`Tabx_aPilot_Objednavky_H.ID`)
+        externalOrderId:
           type: string
           nullable: true
-          description: Echo hodnoty order_id z requestu
+          description: Echo hodnoty `order_id` z requestu
+        orderNumber:
+          type: string
+          nullable: true
+          description: Číslo objednávky z e-shopu (echo `order_number`)
+        code:
+          type: string
+          nullable: true
+          description: Párovací znak v Heliosu (vyplněn po zpracování `hpx_aPilot_Objednavky_ZpracujObj`)
+        status:
+          type: string
+          nullable: true
+          description: Stav došlé objednávky (kód) – viz `GET /v1/order-statuses`
+        error:
+          type: string
+          nullable: true
+          description: Chyba při zakládání/zpracování objednávky (`null` = OK)
         requestId:
           type: string
           format: uuid
@@ -1237,7 +1362,7 @@ components:
           properties:
             method_code: { type: string, nullable: true, description: "Kód platby" }
             price_with_vat: { type: number, nullable: true }
-            status: { type: integer, nullable: true, description: "0=nezaplaceno, 1=zaplaceno" }
+            status: { type: integer, nullable: true, description: "Stav platby – viz PUT /v1/orders/{id}/payment (NULL, 0=Nelze ověřit, 1=Zaplacená, 2=Autorizovaná, 3=Platba vybrána, 4=Čekající, 5=Vrácená, 8=Vypršel časový limit, 9=Zrušená)" }
         total_with_vat:
           type: number
           nullable: true
@@ -1275,12 +1400,14 @@ components:
                 type: number
                 nullable: true
               links:
-                type: object
+                type: array
                 nullable: true
-                description: Odkazy na e-knihy (formát + URL)
-                properties:
-                  format: { type: string, example: "epub" }
-                  url: { type: string, format: uri }
+                description: Odkazy na e-knihy / přílohy (formát + URL)
+                items:
+                  type: object
+                  properties:
+                    format: { type: string, example: "epub" }
+                    url: { type: string, format: uri }
         pickup_point:
           type: string
           nullable: true
@@ -1355,29 +1482,36 @@ components:
           type: string
           format: date-time
 
-    OrderStatusUpdateRequest:
+    OrderPaymentUpdateRequest:
       type: object
       required: [status]
       properties:
         status:
-          type: string
-          description: Nový status objednávky
-          example: "040"
-        note:
-          type: string
-          description: Volitelná poznámka ke změně statusu
-          example: "Expedováno přes GLS"
+          type: integer
+          nullable: true
+          description: |
+            Nový stav platby. Hodnoty:
+            `null` = neuvedeno, `0` = Nelze ověřit, `1` = Zaplacená,
+            `2` = Autorizovaná, `3` = Platba vybrána, `4` = Čekající,
+            `5` = Vrácená, `8` = Vypršel časový limit, `9` = Zrušená.
+          example: 1
+          enum: [null, 0, 1, 2, 3, 4, 5, 8, 9]
 
-    OrderStatusUpdateResponse:
+    OrderPaymentUpdateResponse:
       type: object
-      required: [ok, orderId, status, requestId, ts]
+      required: [ok, orderId, payment, requestId, ts]
       properties:
         ok:
           type: boolean
         orderId:
           type: integer
-        status:
-          type: string
+        payment:
+          type: object
+          properties:
+            status:
+              type: integer
+              nullable: true
+              example: 1
         requestId:
           type: string
           format: uuid
@@ -1389,16 +1523,17 @@ components:
 
     Product:
       type: object
-      description: Produkt z katalogu
+      description: |
+        Produkt z katalogu.
+
+        Skladovost a varianty produktu **nejsou** součástí tohoto schématu – jsou
+        vystavovány samostatným endpointem `GET /v1/stock` (delta sync) a
+        `GET /v1/stock/{product_id}` (detail).
       properties:
         product_id:
           type: integer
           description: ID produktu
           example: 757
-        parent_product_id:
-          type: integer
-          nullable: true
-          description: ID rodičovského produktu (pro varianty)
         category_id:
           type: integer
           description: ID primární kategorie
@@ -1406,7 +1541,8 @@ components:
         alternative_category_ids:
           type: string
           nullable: true
-          description: Alternativní kategorie (formát závisí na backendu)
+          description: Čárkou oddělená ID alternativních kategorií
+          example: "10007,10012"
         series_id:
           type: integer
           nullable: true
@@ -1422,48 +1558,89 @@ components:
           example: "Nezaručené pověsti / Čiary života"
         subtitle:
           type: string
+          nullable: true
           description: Podtitul
         original_name:
           type: string
+          nullable: true
           description: Původní název (u překladů)
         description_short:
           type: string
-          description: Krátký popis
+          nullable: true
+          description: Krátký popis (HTML)
         description_long:
           type: string
-          description: Dlouhý popis (může obsahovat HTML)
+          nullable: true
+          description: Dlouhý popis (HTML)
+        product_type:
+          type: string
+          nullable: true
+          description: |
+            Typ produktu (vazba / rozlišovák) – např. „Vázaná", „Brožovaná", „E-kniha".
+            Z `TabKmenZbozi_EXT._Rozlisovak` s fallbackem na `efx_HOST_VratVazbu`.
+          example: "Vázaná"
+        main_image_url:
+          type: string
+          nullable: true
+          description: |
+            Hlavní obálka – cesta k souboru v Heliosis úložišti
+            (z `TabDokumStrom.NazevUrovne = 'Hlavní kniha'`).
+            UNC cesta – e-shop si ji případně přemapuje na veřejnou URL.
+          example: "\\\\Heliosis\\XML_WEB\\products\\757\\cover.jpg"
+        images:
+          type: array
+          nullable: true
+          description: |
+            Další obrázky produktu (z `TabDokumStrom.NazevUrovne = 'Kniha'`).
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+                description: Cesta k obrázku (UNC)
+                example: "\\\\Heliosis\\XML_WEB\\products\\757\\01.jpg"
+        documents:
+          type: array
+          nullable: true
+          description: |
+            Soubory ke stažení – ukázky, manuály, doplňkové materiály
+            (z `TabDokumStrom.NazevUrovne = 'Materiály ke stažení'`).
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+                description: Cesta k souboru (UNC)
+                example: "\\\\Heliosis\\XML_WEB\\products\\757\\sample.pdf"
         reviews:
           type: string
           nullable: true
-          description: Recenze / ohlasy (může obsahovat HTML)
+          description: Recenze / ohlasy (HTML)
         ean:
           type: string
+          nullable: true
           description: EAN kód
           example: "9788090212701"
         price:
-          type: string
+          type: number
           description: Koncová cena (CZK)
-          example: "67"
+          example: 299.00
         price_b2b:
-          type: string
+          type: number
+          nullable: true
           description: B2B cena (CZK)
-          example: "55"
+          example: 220.00
         vat_rate:
-          type: string
-          description: Sazba DPH
-          example: "0.00"
-        stock_quantity:
-          type: string
-          description: |
-            Skladová zásoba. Záporné hodnoty indikují neskladové položky
-            nebo neomezený sklad (závisí na konfiguraci).
-          example: "-9999.000000"
+          type: number
+          description: Sazba DPH v %
+          example: 10.0
         unit:
           type: string
-          description: Jednotka
+          description: Měrná jednotka
           example: "ks"
         isbn:
           type: string
+          nullable: true
           description: ISBN
           example: "80-902127-0-0"
         active:
@@ -1473,14 +1650,6 @@ components:
           type: string
           format: date-time
           description: Datum poslední aktualizace
-        order_by:
-          type: string
-          description: |
-            9-znakový sort key pro doporučené pořadí v katalogu –
-            řadit ASC. Pod kapotou kombinuje skladovost / ruční pořadí /
-            vazbu / rok vydání / podpis; klient ho jen převezme,
-            žádný další výklad nepotřebuje.
-          example: "001022024"
         persons:
           type: array
           nullable: true
@@ -1554,6 +1723,67 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Product"
+        count:
+          type: integer
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Stock ---
+
+    Stock:
+      type: object
+      description: Skladovost a varianty jednoho produktu (z view `hvw_Feedco_Stock`)
+      properties:
+        product_id:
+          type: integer
+          description: ID produktu (shodné s `product_id` z `/v1/products`)
+          example: 757
+        code:
+          type: string
+          description: Kód zboží
+          example: "100000011"
+        name:
+          type: string
+          description: Název produktu
+        stock_quantity:
+          type: integer
+          description: |
+            Aktuální skladovost s odečtenou bezpečnostní rezervou.
+            Speciální hodnoty:
+            - `-9999` = nelze prodávat (připravujeme / prodej ukončen / nedotiskovat / pozastaveno)
+            - `99999` = e-kniha (vždy dostupná)
+          example: 15
+        sold_quantity_30d:
+          type: integer
+          description: Počet prodaných kusů za posledních 30 dní
+          example: 4
+        variant_ids:
+          type: string
+          nullable: true
+          description: |
+            Čárkou oddělená ID variant produktu (např. brožovaná × vázaná × e-kniha)
+            seřazená podle doporučeného pořadí (skladovost → ruční pořadí → vazba → rok vydání → podpis).
+          example: "1024,1025,1026"
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Datum a čas posledního skladového pohybu
+
+    StockListResponse:
+      type: object
+      required: [ok, stock, count, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        stock:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stock"
         count:
           type: integer
         requestId:
@@ -1774,6 +2004,18 @@ components:
           type: string
           nullable: true
           description: Dlouhý medailonek (HTML)
+        photo_url:
+          type: string
+          nullable: true
+          description: |
+            Fotka autora – cesta k souboru v Heliosis úložišti
+            (z `TabDokumStrom.NazevUrovne = 'Fotka autora'`). UNC cesta.
+          example: "\\\\Heliosis\\XML_WEB\\persons\\123\\photo.jpg"
+        photo_copyright:
+          type: string
+          nullable: true
+          description: Copyright / autor fotky (`TabDokumenty_EXT._Feedco_Copyright`)
+          example: "© Foto: Jana Nováková, 2024"
         updated_at:
           type: string
           format: date-time
