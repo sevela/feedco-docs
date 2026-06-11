@@ -2,7 +2,7 @@ openapi: "3.0.3"
 
 info:
   title: Feedco API
-  version: "1.0.8"
+  version: "1.0.9"
   description: |
     **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
 
@@ -63,7 +63,9 @@ tags:
   - name: Categories
     description: Kategorie produktů
   - name: Series
-    description: Edice a série
+    description: Série (příběhová / tematická návaznost)
+  - name: Editions
+    description: Edice (řada knih se společným vizuálním stylem)
   - name: Awards
     description: Ocenění produktů a osob
   - name: Persons
@@ -634,6 +636,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SeriesListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ──────────────────────────────────────────────
+  # Editions
+  # ──────────────────────────────────────────────
+  /v1/editions:
+    get:
+      operationId: listEditions
+      summary: Seznam edic
+      description: Vrací stránkovaný seznam edic (řady knih se společným vizuálním stylem).
+      tags: [Editions]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: page_size
+          in: query
+          description: Počet záznamů na stránku (výchozí 200, max 1000)
+          schema:
+            type: integer
+            default: 200
+            maximum: 1000
+        - name: changed_since
+          in: query
+          description: "Delta sync: pouze edice změněné od tohoto okamžiku"
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Seznam edic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EditionsListResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1881,6 +1921,48 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Series"
+        count:
+          type: integer
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Editions ---
+
+    Edition:
+      type: object
+      properties:
+        edition_id:
+          type: integer
+          description: ID edice
+          example: 5
+        name:
+          type: string
+          description: Název edice
+          example: "Modrá knihovna"
+        description:
+          type: string
+          nullable: true
+          description: Popis edice
+        active:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+
+    EditionsListResponse:
+      type: object
+      required: [ok, editions, count, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        editions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Edition"
         count:
           type: integer
         requestId:
