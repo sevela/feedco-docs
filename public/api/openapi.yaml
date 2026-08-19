@@ -515,6 +515,16 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: full
+          in: query
+          required: false
+          schema:
+            type: integer
+            enum: [0, 1]
+            default: 0
+          description: >
+            Když je 1, vrací rozšířenou sadu sloupců.
+            Struktura odpovědi je v tomto režimu širší než schéma popsané níže.
       responses:
         "200":
           description: Seznam skladovostí
