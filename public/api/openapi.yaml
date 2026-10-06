@@ -2,7 +2,7 @@ openapi: "3.0.3"
 
 info:
   title: Feedco API
-  version: "1.0.10"
+  version: "1.0.13"
   description: |
     **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
 
@@ -356,7 +356,7 @@ paths:
       description: |
         Změní stav platby u existující objednávky.
 
-        Stav samotné objednávky (`status`) řídí Helios — e-shop ho přes API nemění.
+        Stav samotné objednávky (`status`) se mění zvlášť přes `PUT /v1/orders/{order_id}/status`.
 
         ### Číselník stavů platby (`status`)
 
@@ -402,6 +402,69 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/orders/{order_id}/status:
+    put:
+      operationId: updateOrderStatus
+      summary: Změna stavu objednávky
+      description: |
+        Změní stav objednávky v Helios Inuvio (stav došlé objednávky).
+
+        Povolené hodnoty vrací `GET /v1/order-statuses` (pole `code`).
+        Neznámý kód stavu vrátí `400`. Přechody mezi stavy API neomezuje.
+      tags: [Orders]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderStatusUpdateRequest"
+            example:
+              status: "030"
+      responses:
+        "200":
+          description: Stav objednávky změněn
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderStatusUpdateResponse"
+              example:
+                ok: true
+                orderId: 102114
+                status: "030"
+                previousStatus: "020"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-10-06T09:10:00+00:00"
+        "400":
+          description: Chybí `status`, má chybný formát, nebo takový stav v Heliosu neexistuje
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: bad_request
+                message: "Unknown order status '999' (see GET /v1/order-statuses)"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-10-06T09:10:00+00:00"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Objednávka je přijatá, ale v Heliosu k ní zatím nevznikla došlá objednávka
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: conflict
+                message: "Order 102114 has no document in Helios yet"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-10-06T09:10:00+00:00"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1562,6 +1625,41 @@ components:
               type: integer
               nullable: true
               example: 1
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    OrderStatusUpdateRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          minLength: 1
+          maxLength: 3
+          description: Kód nového stavu objednávky (z GET /v1/order-statuses)
+          example: "030"
+
+    OrderStatusUpdateResponse:
+      type: object
+      required: [ok, orderId, status, previousStatus, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        orderId:
+          type: integer
+        status:
+          type: string
+          description: Nově nastavený stav
+          example: "030"
+        previousStatus:
+          type: string
+          nullable: true
+          description: Stav před změnou
+          example: "020"
         requestId:
           type: string
           format: uuid
