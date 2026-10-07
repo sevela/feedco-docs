@@ -2,7 +2,7 @@ openapi: "3.0.3"
 
 info:
   title: Feedco API
-  version: "1.0.13"
+  version: "1.1.0"
   description: |
     **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
 
@@ -10,6 +10,12 @@ info:
     - Synchronizaci produktového katalogu (produkty, kategorie, série, edice, ocenění, osoby)
     - Příjem a správu objednávek
     - Dotazování na způsoby dopravy a platby
+    - Zakládání firemních aktivit (reklamace, dotazy z webových formulářů)
+
+    ## Dostupnost endpointů
+
+    Endpoint `POST /v1/orders/hash` je volitelný a zapíná se jen na vybraných instancích.
+    Jestli ho vaše instance má, ukazuje `capabilities.orders.get_hash` v odpovědi `GET /v1/me`.
 
     ## Autentizace
 
@@ -74,6 +80,8 @@ tags:
     description: Způsoby dopravy
   - name: Payment
     description: Platební metody
+  - name: Activities
+    description: Firemní aktivity (reklamace, dotazy)
 
 security:
   - basicAuth: []
@@ -465,6 +473,58 @@ paths:
                 message: "Order 102114 has no document in Helios yet"
                 requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                 ts: "2026-10-06T09:10:00+00:00"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/orders/hash:
+    post:
+      operationId: getOrderHash
+      summary: Hash objednávky podle e-mailu a čísla
+      description: |
+        **Volitelný endpoint.** Je aktivní jen na instancích, kde je zapnutý. Na ostatních vrací `404`
+        s chybou `not_supported`; dostupnost ukazuje `capabilities.orders.get_hash` v `GET /v1/me`.
+
+        Dohledá objednávku podle e-mailu zákazníka a čísla objednávky a vrátí její SHA2-256 hash.
+        E-shop ho použije jako token do odkazu, např. na stav objednávky bez přihlášení.
+        Hash se vrátí jen při shodě e-mailu i čísla, samotné číslo objednávky k jeho získání nestačí.
+      tags: [Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderHashRequest"
+            example:
+              email: "zakaznik@example.cz"
+              order_number: "2026001234"
+      responses:
+        "200":
+          description: Hash objednávky
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderHashResponse"
+              example:
+                ok: true
+                orderNumber: "2026001234"
+                hash: "9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-03-31T09:10:00+00:00"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Objednávka pro danou kombinaci e-mailu a čísla nenalezena, nebo endpoint na instanci není zapnutý (`not_supported`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: not_found
+                message: "Order not found for given email and order_number"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-03-31T09:10:00+00:00"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -915,6 +975,69 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  # ──────────────────────────────────────────────
+  # Activities
+  # ──────────────────────────────────────────────
+  /v1/activities:
+    post:
+      operationId: createActivity
+      summary: Založení firemní aktivity
+      description: |
+        Založí firemní aktivitu v Helios Inuvio, např. reklamaci nebo dotaz z webového formuláře.
+
+        Aktivita se přiřadí k organizaci podle IČO, pokud ji Helios najde. Kontaktní údaje
+        (jméno, e-mail, telefon, organizace, IČO) se zapíšou na začátek popisu aktivity.
+        Kód kategorie (`category`) dodá implementátor Heliosu, neznámá kategorie vrátí `400`.
+      tags: [Activities]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivityCreateRequest"
+            example:
+              first_name: "Jan"
+              surname: "Novák"
+              email: "jan@example.com"
+              phone: "+420600000000"
+              company: "ACME s.r.o."
+              ico: "12345678"
+              category: "REK"
+              subject: "Poškozená zásilka"
+              description: "Zboží dorazilo s poškozeným obalem."
+              date: "2026-10-07T10:15:00"
+      responses:
+        "201":
+          description: Aktivita založena
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityCreateResponse"
+              example:
+                ok: true
+                activityId: 5123
+                number: "REK00042"
+                organizationNumber: 1234
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-10-07T08:15:00+00:00"
+        "400":
+          description: Chybí `category` nebo `subject`, pole má špatný typ nebo formát, nebo kategorie v Heliosu neexistuje
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: bad_request
+                message: "Unknown activity category 'XYZ'"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-10-07T08:15:00+00:00"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 # ================================================================
 # Components
 # ================================================================
@@ -1112,6 +1235,15 @@ components:
         capabilities:
           type: object
           description: Mapa dostupných operací
+          example:
+            orders: { create: true, list: true, get: true, update_payment: true, update_status: true, get_hash: false }
+            products: { list: true, get: true }
+            stock: { list: true, get: true }
+            categories: { list: true }
+            series: { list: true }
+            awards: { list: true }
+            persons: { list: true, get: true }
+            activities: { create: true }
         requestId:
           type: string
         ts:
@@ -1660,6 +1792,39 @@ components:
           nullable: true
           description: Stav před změnou
           example: "020"
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    OrderHashRequest:
+      type: object
+      required: [email, order_number]
+      properties:
+        email:
+          type: string
+          description: E-mail kontaktní osoby na objednávce
+          example: "zakaznik@example.cz"
+        order_number:
+          type: string
+          description: Číslo objednávky (párovací znak nebo číslo objednávky e-shopu)
+          example: "2026001234"
+
+    OrderHashResponse:
+      type: object
+      required: [ok, orderNumber, hash, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        orderNumber:
+          type: string
+          example: "2026001234"
+        hash:
+          type: string
+          description: SHA2-256 hash objednávky (hex)
+          example: "9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
         requestId:
           type: string
           format: uuid
@@ -2361,6 +2526,86 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PaymentMethod"
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    # --- Activities ---
+
+    ActivityCreateRequest:
+      type: object
+      description: |
+        Payload pro založení aktivity. Celý objekt je předán do SQL procedury jako JSON string.
+      required: [category, subject]
+      properties:
+        first_name:
+          type: string
+          nullable: true
+          example: "Jan"
+        surname:
+          type: string
+          nullable: true
+          example: "Novák"
+        email:
+          type: string
+          nullable: true
+          example: "jan@example.com"
+        phone:
+          type: string
+          nullable: true
+          example: "+420600000000"
+        company:
+          type: string
+          nullable: true
+          description: Název organizace
+          example: "ACME s.r.o."
+        ico:
+          type: string
+          nullable: true
+          description: IČO – podle něj se aktivita přiřadí k organizaci v Heliosu
+          example: "12345678"
+        category:
+          type: string
+          minLength: 1
+          maxLength: 3
+          description: Kód kategorie aktivity v Heliosu
+          example: "REK"
+        subject:
+          type: string
+          minLength: 1
+          description: Předmět (max. 255 znaků, delší se zkrátí)
+          example: "Poškozená zásilka"
+        description:
+          type: string
+          nullable: true
+          description: Popis
+        date:
+          type: string
+          nullable: true
+          description: Datum aktivity (ISO 8601). Bez časové zóny se bere jako čas v ČR. Pokud chybí, použije se čas přijetí.
+          example: "2026-10-07T10:15:00"
+
+    ActivityCreateResponse:
+      type: object
+      required: [ok, activityId, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        activityId:
+          type: integer
+          description: ID aktivity v Heliosu
+        number:
+          type: string
+          nullable: true
+          description: Číslo aktivity v Heliosu
+          example: "REK00042"
+        organizationNumber:
+          type: integer
+          nullable: true
+          description: Číslo organizace, ke které byla aktivita přiřazena (null = podle IČO nenalezena nebo IČO chybí)
         requestId:
           type: string
           format: uuid
