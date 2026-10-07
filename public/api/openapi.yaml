@@ -985,8 +985,9 @@ paths:
       description: |
         Založí firemní aktivitu v Helios Inuvio, např. reklamaci nebo dotaz z webového formuláře.
 
-        Aktivita se přiřadí k organizaci podle IČO, pokud ji Helios najde. Kontaktní údaje
-        (jméno, e-mail, telefon, organizace, IČO) se zapíšou na začátek popisu aktivity.
+        Aktivita se v Heliosu naváže na organizaci a kontaktní osobu. Jestli se zakládají nové,
+        nebo se dohledávají existující, určuje nastavení dané instance. Kontaktní údaje
+        (jméno, e-mail, telefon, organizace, IČO) se navíc zapíšou na začátek popisu aktivity.
         Kód kategorie (`category`) dodá implementátor Heliosu, neznámá kategorie vrátí `400`.
       tags: [Activities]
       parameters:
@@ -2565,7 +2566,7 @@ components:
         ico:
           type: string
           nullable: true
-          description: IČO – podle něj se aktivita přiřadí k organizaci v Heliosu
+          description: IČO organizace
           example: "12345678"
         category:
           type: string
@@ -2605,7 +2606,7 @@ components:
         organizationNumber:
           type: integer
           nullable: true
-          description: Číslo organizace, ke které byla aktivita přiřazena (null = podle IČO nenalezena nebo IČO chybí)
+          description: Číslo organizace v Heliosu, ke které je aktivita přiřazena (null = bez organizace)
         requestId:
           type: string
           format: uuid
