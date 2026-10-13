@@ -65,7 +65,7 @@ tags:
   - name: Products
     description: Produktový katalog
   - name: Stock
-    description: Skladovost a varianty (oddělený delta-sync endpoint)
+    description: Skladovost (oddělený delta-sync endpoint)
   - name: Categories
     description: Kategorie produktů
   - name: Series
@@ -666,7 +666,7 @@ paths:
     get:
       operationId: getStock
       summary: Detail skladovosti produktu
-      description: Vrací aktuální skladovost a varianty jednoho produktu.
+      description: Vrací aktuální skladovost jednoho produktu.
       tags: [Stock]
       parameters:
         - name: product_id
@@ -1840,9 +1840,9 @@ components:
       description: |
         Produkt z katalogu.
 
-        Skladovost je zde jako číslo (`stock_quantity`), ale **varianty** a prodejní
-        statistika (`sold_quantity_30d`, `main_variant_ids`) součástí tohoto schématu nejsou –
-        jsou vystavovány samostatným endpointem `GET /v1/stock` (delta sync) a
+        Skladovost je zde jako číslo (`stock_quantity`), ale prodejní statistika
+        (`sold_quantity_30d`) součástí tohoto schématu není – je vystavována
+        samostatným endpointem `GET /v1/stock` (delta sync) a
         `GET /v1/stock/{product_id}` (detail).
       properties:
         product_id:
@@ -1899,6 +1899,14 @@ components:
             Typ produktu (rozlišovák varianty) – např. „Vázaná", „Brožovaná", „E-kniha".
             Z `TabKmenZbozi_EXT._RucniNazevVariantyWeb` s fallbackem na typ vazby.
           example: "Vázaná"
+        main_variant_ids:
+          type: string
+          nullable: true
+          description: |
+            Čárkou oddělená ID hlavních produktů, pod které produkt patří jako varianta
+            (např. e-kniha → tištěná kniha). Bez zaručeného pořadí.
+            `null` = produkt není variantou jiného produktu.
+          example: "1024"
         stock_quantity:
           type: integer
           nullable: true
@@ -2093,7 +2101,7 @@ components:
 
     Stock:
       type: object
-      description: Skladovost a varianty jednoho produktu (z view `hvw_Feedco_Stock`)
+      description: Skladovost jednoho produktu (z view `hvw_Feedco_Stock`)
       properties:
         product_id:
           type: integer
@@ -2118,14 +2126,6 @@ components:
           type: integer
           description: Počet prodaných kusů za posledních 30 dní
           example: 4
-        main_variant_ids:
-          type: string
-          nullable: true
-          description: |
-            Čárkou oddělená ID hlavních produktů, pod které produkt patří jako varianta
-            (např. e-kniha → tištěná kniha). Bez zaručeného pořadí.
-            `null` = produkt není variantou jiného produktu.
-          example: "1024"
         updated_at:
           type: string
           format: date-time
