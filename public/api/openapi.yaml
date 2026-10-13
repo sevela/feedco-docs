@@ -1841,7 +1841,7 @@ components:
         Produkt z katalogu.
 
         Skladovost je zde jako číslo (`stock_quantity`), ale **varianty** a prodejní
-        statistika (`sold_quantity_30d`, `variant_ids`) součástí tohoto schématu nejsou –
+        statistika (`sold_quantity_30d`, `main_variant_ids`) součástí tohoto schématu nejsou –
         jsou vystavovány samostatným endpointem `GET /v1/stock` (delta sync) a
         `GET /v1/stock/{product_id}` (detail).
       properties:
@@ -2118,13 +2118,14 @@ components:
           type: integer
           description: Počet prodaných kusů za posledních 30 dní
           example: 4
-        variant_ids:
+        main_variant_ids:
           type: string
           nullable: true
           description: |
-            Čárkou oddělená ID variant produktu (např. brožovaná × vázaná × e-kniha)
-            seřazená podle doporučeného pořadí (skladovost → ruční pořadí → vazba → rok vydání → podpis).
-          example: "1024,1025,1026"
+            Čárkou oddělená ID hlavních produktů, pod které produkt patří jako varianta
+            (např. e-kniha → tištěná kniha). Bez zaručeného pořadí.
+            `null` = produkt není variantou jiného produktu.
+          example: "1024"
         updated_at:
           type: string
           format: date-time
