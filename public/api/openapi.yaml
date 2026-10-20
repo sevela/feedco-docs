@@ -2,7 +2,7 @@ openapi: "3.0.3"
 
 info:
   title: Feedco API
-  version: "1.1.1"
+  version: "1.1.2"
   description: |
     **Feedco** je integrační API propojující e-commerce platformy s ERP systémem Helios iNuvio.
 
@@ -604,6 +604,64 @@ paths:
                   ts:
                     type: string
                     format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/products/{product_id}/url:
+    put:
+      operationId: updateProductUrl
+      summary: Zápis URL produktu na e-shopu
+      description: |
+        Zapíše aktuální adresu produktu na e-shopu na kmenovou kartu v Helios Inuvio.
+        E-shop endpoint volá, když produkt publikuje nebo mu změní adresu.
+
+        `url` musí být absolutní adresa začínající `http://` nebo `https://`, max. 255 znaků.
+        `null` nebo prázdný řetězec adresu z karty smaže.
+      tags: [Products]
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          description: ID produktu (stejné jako `product_id` v GET /v1/products)
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUrlUpdateRequest"
+            example:
+              url: "https://www.example.cz/kniha/nazev-knihy"
+      responses:
+        "200":
+          description: URL produktu zapsána
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductUrlUpdateResponse"
+              example:
+                ok: true
+                productId: 1234
+                url: "https://www.example.cz/kniha/nazev-knihy"
+                previousUrl: "https://www.example.cz/kniha/stary-nazev"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-10-20T09:10:00+00:00"
+        "400":
+          description: Chybí `url`, není to řetězec, nezačíná `http://`/`https://`, nebo je delší než 255 znaků
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: bad_request
+                message: "'url' must start with http:// or https://"
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                ts: "2026-10-20T09:10:00+00:00"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1238,7 +1296,7 @@ components:
           description: Mapa dostupných operací
           example:
             orders: { create: true, list: true, get: true, update_payment: true, update_status: true, get_hash: false }
-            products: { list: true, get: true }
+            products: { list: true, get: true, update_url: true }
             stock: { list: true, get: true }
             categories: { list: true }
             series: { list: true }
@@ -1793,6 +1851,40 @@ components:
           nullable: true
           description: Stav před změnou
           example: "020"
+        requestId:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+
+    ProductUrlUpdateRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: Absolutní adresa produktu na e-shopu; `null` nebo prázdný řetězec adresu smaže
+          example: "https://www.example.cz/kniha/nazev-knihy"
+
+    ProductUrlUpdateResponse:
+      type: object
+      required: [ok, productId, url, previousUrl, requestId, ts]
+      properties:
+        ok:
+          type: boolean
+        productId:
+          type: integer
+        url:
+          type: string
+          nullable: true
+          description: Nově zapsaná adresa
+        previousUrl:
+          type: string
+          nullable: true
+          description: Adresa před změnou
         requestId:
           type: string
           format: uuid
